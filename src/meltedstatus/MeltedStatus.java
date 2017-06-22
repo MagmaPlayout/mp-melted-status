@@ -11,7 +11,6 @@ import playoutCore.ConfigurationManager;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
-
 /**
  * Connects to a running melted instance and queries the STATUS.
  * STATUS is a unique command, so I'm not going to use mpc-meltedBackend for this.
@@ -62,9 +61,10 @@ public class MeltedStatus {
             while(running){
                 String line = reader.readLine(); // Blocking method
                 if(line != null){
-                    logger.log(Level.INFO, "MeltedStatus - : Could not connect to the Melted server. Retries exhausted. \nExiting...");
+                    logger.log(Level.INFO, "MeltedStatus - ERROR: Could not connect to the Melted server. Retries exhausted. \nExiting...");
                     // Do something with line
                     // check if melted is running, what clip is playing, how many clips remains ...
+                    // check telnet connection
                     // redisPublisher.publish(mstaChannel, "blabal");
                 }
             }
