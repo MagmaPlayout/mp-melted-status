@@ -32,11 +32,7 @@ public class MeltedStatus {
     }
     
     private void run(){
-        // connect to telnet melted host
-        // send STATUS cmd
-        // parse output line by line
         // General config
-        
         Logger logger = Logger.getLogger(MeltedStatus.class.getName());
         ConfigurationManager cfg = ConfigurationManager.getInstance();
         cfg.init(logger);
@@ -53,7 +49,7 @@ public class MeltedStatus {
         } catch (InterruptedException ex) {
             System.exit(1);
         }
-        String mstaChannel = "MSTA"; // TODO agregar una nueva config MSTA (melted status) como canal de redis
+        String mstaChannel = cfg.getRedisMstaChannel();
         
         
         try {
