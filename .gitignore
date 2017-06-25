@@ -22,3 +22,5 @@
 hs_err_pid*
 /mp-melted-status/nbproject/private/
 /nbproject/private/
+/build/
+/dist/

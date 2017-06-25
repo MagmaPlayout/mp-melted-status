@@ -41,8 +41,8 @@ public class MeltedStatus {
          */
         Jedis redisPublisher = new Jedis(cfg.getRedisHost(), cfg.getRedisPort(), cfg.getRedisReconnectionTimeout());
         try {
-            while(connectToRedisPublisher(logger, cfg, redisPublisher)){
-                logger.log(Level.SEVERE, "MeltedStatus - ERROR: Could not connect to the Redis server. Is it running?\nExiting...");
+            while(!connectToRedisPublisher(logger, cfg, redisPublisher)){
+                logger.log(Level.SEVERE, "MeltedStatus - ERROR: Could not connect to the Redis server. Will retry shortly...");
                 Thread.sleep(5000);
             }
         } catch (InterruptedException ex) {
@@ -61,11 +61,16 @@ public class MeltedStatus {
             while(running){
                 String line = reader.readLine(); // Blocking method
                 if(line != null){
-                    logger.log(Level.INFO, "MeltedStatus - ERROR: Could not connect to the Melted server. Retries exhausted. \nExiting...");
+                    logger.log(Level.SEVERE, "MeltedStatus - line: {0}", line);
                     // Do something with line
                     // check if melted is running, what clip is playing, how many clips remains ...
                     // check telnet connection
-                    // redisPublisher.publish(mstaChannel, "blabal");
+                    redisPublisher.publish(mstaChannel, line);
+                    //Check if connection was closed from foreign host
+                    // and call reconnectMelted()
+                    //     if(line.eqals(CONN_CLOSED_FROM_FOREIGN_HOST)){
+                    //         meltedReconnect();
+                    //     }
                 }
             }
         } catch (IOException ex) {
@@ -73,7 +78,7 @@ public class MeltedStatus {
         }
     }
     
-    public void reconnect(){
+    public void meltedReconnect(){
         //TODO: reconn routine
     }
     
@@ -90,15 +95,16 @@ public class MeltedStatus {
     }
     
     public static boolean connectToRedisPublisher(Logger logger, ConfigurationManager cfg, Jedis redisPublisher){
-        logger.log(Level.INFO, "MeltedStatus - Attempt to connect to Redis Pub/Sub server...");
+        logger.log(Level.INFO, "MeltedStatus - Attempt to connect to Redis Publisher server...");
         try {
             redisPublisher.connect();
         }
         catch(JedisConnectionException e){
-            logger.log(Level.SEVERE, "MeltedStatus - ERROR: Could not connect to the Redis server. Is it running?\nExiting...");
+            logger.log(Level.SEVERE, "MeltedStatus - ERROR: Could not connect to the Redis server. Is it running?");
             return false;
         }
-        
+
+        logger.log(Level.INFO, "MeltedStatus - Connected to Redis Publisher server.");
         return true;
     }
 }
