@@ -61,7 +61,7 @@ public class MeltedStatus {
             while(running){
                 String line = reader.readLine(); // Blocking method
                 if(line != null){
-                    logger.log(Level.SEVERE, "MeltedStatus - line: {0}", line);
+                    logger.log(Level.INFO, "MeltedStatus - line: {0}", line);
                     // Do something with line
                     // check if melted is running, what clip is playing, how many clips remains ...
                     // check telnet connection
