@@ -51,6 +51,11 @@ public class StatusProcessor {
         this.endTime = "-";
     }
     
+    public void meltedDisonnected(){
+        redisPublisher.publish(mstaChannel, "MELTED DISONNECTED");
+        logger.log(Level.SEVERE, "MeltedStatus - line: {0}", "MELTED DISCONNECTED");
+    }
+    
     
     /**
      * Detects events and calls the right response.
@@ -105,23 +110,21 @@ public class StatusProcessor {
             logger.log(Level.INFO, "MeltedStatus - line: {0}", "CHANGE MODE FROM "+lastCmd[1]+" TO "+currentCmd[1]);
         }
         
+        // From Playing to Pause - posible final de Playlist - Sets EndTime and sends log
         if(lastCmd[1].equals("playing") && currentCmd[1].equals("paused")){
             redisPublisher.publish(mstaChannel, "PLAYBACK PAUSED");
             logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK PAUSED"); 
             this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
             sendClipToLog(lastCmd);            
-            // sets new clip start time  
-            this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());  
         }
+        // from Playing to Stop - Sets EndTime and sends log
         if(lastCmd[1].equals("playing") && currentCmd[1].equals("stopped")){
             redisPublisher.publish(mstaChannel, "PLAYBACK STOPPED");
             logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STOPPED");
             this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
             sendClipToLog(lastCmd);            
-            // sets new clip start time  
-            this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());  
         }
-        
+        // Play - Sets StartTime 
         if(!(lastCmd[1].equals("playing")) && currentCmd[1].equals("playing")){
             redisPublisher.publish(mstaChannel, "PLAYBACK STARTED");
             logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STARTED"); 
@@ -133,10 +136,10 @@ public class StatusProcessor {
         if(!lastCmd[16].equals(currentCmd[16])){ // Index changed
             redisPublisher.publish(mstaChannel, "INDEX CHANGED FROM "+lastCmd[16]+" TO "+currentCmd[16]);
             logger.log(Level.INFO, "MeltedStatus - line: {0}", "INDEX CHANGED FROM "+lastCmd[16]+" TO "+currentCmd[16]);
-            
+            // sets end time and sends log
             this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
             sendClipToLog(lastCmd);            
-            // sets new clip start time  
+            // sets next clip start time  
             this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());            
         }
     }

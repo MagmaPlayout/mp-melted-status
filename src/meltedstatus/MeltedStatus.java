@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import libconfig.ConfigurationManager;
@@ -54,6 +55,7 @@ public class MeltedStatus {
         
         try {
             socket = new Socket(cfg.getMeltedHost(), cfg.getMeltedPort());
+            socket.setSoTimeout(5000);
             writer = new PrintWriter(socket.getOutputStream(), true);
             reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         
@@ -61,16 +63,17 @@ public class MeltedStatus {
             running=true;
             while(running){               
                 String line = reader.readLine(); // Blocking method
-                if(line != null){
-                    
-                    currentCmd = parser.getCmdParsed(line);                    
-                    sp.eventHandler(currentCmd, lastCmd, line);
-                    lastCmd = currentCmd;
-                    
+                if(line != null){                    
+                    currentCmd = parser.getCmdParsed(line);  // parsea el comando USTA                    
+                    sp.eventHandler(currentCmd, lastCmd, line); //Manejador de eventos USTA
+                    lastCmd = currentCmd;                    
                 }
             }
         } catch (IOException ex) {
-            //TODO
+            ex.printStackTrace();
+            System.out.println("MELTED DISCONECTED!");
+            sp.meltedDisonnected();
+            disconnect();
         }
     }
     
@@ -86,6 +89,7 @@ public class MeltedStatus {
             socket.close();
         } catch (IOException ex) {
             //TODO
+             System.out.println("EXCEPTION WTF: " +ex.toString());
             ex.printStackTrace();
         }
     }   
