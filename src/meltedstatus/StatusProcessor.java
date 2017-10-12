@@ -5,13 +5,22 @@
  */
 package meltedstatus;
 
+import com.google.gson.Gson;
+import java.io.File;
+import java.io.IOException;
+import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import libconfig.ConfigurationManager;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisConnectionException;
+import us.monoid.json.JSONArray;
+import us.monoid.json.JSONObject;
+import us.monoid.web.JSONResource;
+import us.monoid.web.Resty;
 
 /**
  *
@@ -204,15 +213,44 @@ public class StatusProcessor {
         clip.setName(cmd[2]);
         clip.setStart(this.startTime);
         clip.setEnd(this.endTime);
-        System.out.println("clip = " + clip.toString());
+        
 
         //POSTing in Resty
-        //Gson gson = new Gson();
-        //String jsonClip = gson.toJson(clip);
-        //Map<String, String> clipMap = gson.fromJson(jsonClip, Map.class);
-        //Resty resty = new Resty(Resty.Option.timeout(4000));
-        //JSONObject jsonObject = new JSONObject(clipMap);
-        //resty.json("http://localhost:8001/api/pieces", Resty.content(jsonObject));
+        Gson gson = new Gson();        
+        Resty resty = new Resty(Resty.Option.timeout(4000));
+        
+        
+        //primero busco el idRawMedia que corresponde segun el nombre del clip
+        String idRawMedia = "";
+        File f = new File(clip.getName());
+        String encodedName = URLEncoder.encode(f.getName().replace("\"", ""));
+        clip.setName(f.getName());
+        JSONResource resource = new JSONResource();
+        try { 
+            JSONArray jsonResource = resty.json("http://localhost:8001/api/medias/name/"+encodedName).array();
+            JSONObject jsonMedia = jsonResource.getJSONObject(0);
+            //resource = resty.json("http://localhost:8001/api/medias/name/"+encodedName);
+            //System.out.println("JSON RECEIVED:"+ resource.object().toString() ); 
+            idRawMedia = (String) jsonMedia.get("id");            
+        } catch (IOException ex) {
+            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
+            ex.printStackTrace();
+        } catch (Exception ex) {
+            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
+            ex.printStackTrace();
+        }
+        
+        clip.setIdRawMedia(idRawMedia);
+        System.out.println("clip = " + clip.toString());
+        String jsonClip = gson.toJson(clip);
+        Map<String, String> clipMap = gson.fromJson(jsonClip, Map.class);
+        JSONObject jsonObject = new JSONObject(clipMap);
+        try {
+            resty.json("http://localhost:8080/api/playoutLog", Resty.content(jsonObject));
+        } catch (IOException ex) {
+            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
+            ex.printStackTrace();
+        }
     }
     
     /**

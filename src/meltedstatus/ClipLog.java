@@ -12,12 +12,13 @@ public class ClipLog {
     private String name;
     private String start;
     private String end;
+    private String idRawMedia;
 
    
 
     @Override
     public String toString() {
-        return "Clip{" + "name=" + name + ", start=" + start + ", end=" + end + '}';
+        return "Clip{" + "name=" + name + ", start=" + start + ", end=" + end + ", idRawMedia=" + idRawMedia + '}';
     }
 
     /**
@@ -49,6 +50,14 @@ public class ClipLog {
 
     public void setEnd(String end) {
         this.end = end;
+    }
+    
+    public String getIdRawMedia() {
+        return idRawMedia;
+    }
+
+    public void setIdRawMedia(String id) {
+        this.idRawMedia = id;
     }
     
 
