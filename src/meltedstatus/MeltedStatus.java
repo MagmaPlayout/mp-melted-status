@@ -37,13 +37,10 @@ public class MeltedStatus {
         cfg.init(logger);
         
         StatusProcessor sp = new StatusProcessor();
-//        UstaParser parser = new UstaParser();
-        String[] lastCmd = null;
-        String[] currentCmd = null;
-        
+
         try {
             socket = new Socket(cfg.getMeltedHost(), cfg.getMeltedPort());
-//            socket.setSoTimeout(5000);
+//            socket.setSoTimeout(5000); // TODO: commented for debugging purposes
             writer = new PrintWriter(socket.getOutputStream(), true);
             reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         
