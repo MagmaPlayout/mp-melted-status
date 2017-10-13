@@ -1,24 +1,15 @@
 package meltedstatus;
 
-import com.google.gson.Gson;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import libconfig.ConfigurationManager;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.exceptions.JedisConnectionException;
-import us.monoid.json.JSONObject;
-import us.monoid.web.Resty;
+import meltedBackend.responseParser.parsers.SingleLineStatusParser;
+import meltedBackend.responseParser.responses.UstaResponse;
 
 /**
  * Connects to a running melted instance and queries the STATUS.
@@ -45,28 +36,28 @@ public class MeltedStatus {
         ConfigurationManager cfg = ConfigurationManager.getInstance();
         cfg.init(logger);
         
-        
         StatusProcessor sp = new StatusProcessor();
-        UstaParser parser = new UstaParser();
+//        UstaParser parser = new UstaParser();
         String[] lastCmd = null;
         String[] currentCmd = null;
         
-        
-        
         try {
             socket = new Socket(cfg.getMeltedHost(), cfg.getMeltedPort());
-            socket.setSoTimeout(5000);
+//            socket.setSoTimeout(5000);
             writer = new PrintWriter(socket.getOutputStream(), true);
             reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         
             writer.println("STATUS"); // Send telnet command
             running=true;
+
+            SingleLineStatusParser parser = new SingleLineStatusParser(new UstaResponse());
+            UstaResponse previousFrame = null;
             while(running){               
                 String line = reader.readLine(); // Blocking method
-                if(line != null){                    
-                    currentCmd = parser.getCmdParsed(line);  // parsea el comando USTA                    
-                    sp.eventHandler(currentCmd, lastCmd, line); //Manejador de eventos USTA
-                    lastCmd = currentCmd;                    
+                if(line != null){
+                    UstaResponse currentFrame = (UstaResponse) parser.parse(line);
+                    sp.eventHandler(currentFrame, previousFrame, line);
+                    previousFrame = currentFrame.createCopy(UstaResponse.class);
                 }
             }
         } catch (IOException ex) {
@@ -74,6 +65,10 @@ public class MeltedStatus {
             System.out.println("MELTED DISCONECTED!");
             sp.meltedDisonnected();
             disconnect();
+        } catch (InstantiationException ex) {
+            Logger.getLogger(MeltedStatus.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (IllegalAccessException ex) {
+            Logger.getLogger(MeltedStatus.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
     

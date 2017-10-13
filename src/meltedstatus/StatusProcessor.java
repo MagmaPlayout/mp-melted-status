@@ -6,7 +6,6 @@
 package meltedstatus;
 
 import com.google.gson.Gson;
-import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
@@ -15,11 +14,12 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import libconfig.ConfigurationManager;
+import meltedBackend.common.MeltedCommandException;
+import meltedBackend.responseParser.responses.UstaResponse;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 import us.monoid.json.JSONArray;
 import us.monoid.json.JSONObject;
-import us.monoid.web.JSONResource;
 import us.monoid.web.Resty;
 
 /**
@@ -27,25 +27,23 @@ import us.monoid.web.Resty;
  * @author debian
  */
 public class StatusProcessor {
-    
-    Jedis redisPublisher;
-    String mstaChannel;
-    Logger logger;
-    String startTime;
-    String endTime;
+    private Jedis redisPublisher;
+    private final String mstaChannel;
+    private final Logger logger;
+    private String startTime;
+    private String endTime;
+    private final ConfigurationManager cfg;
     
     
     /**
      * CONSTRUCTOR INIT
-     * 
      */
     public StatusProcessor(){
         this.logger = Logger.getLogger(MeltedStatus.class.getName());
-        ConfigurationManager cfg = ConfigurationManager.getInstance();
+        this.cfg = ConfigurationManager.getInstance();
         this.redisPublisher = new Jedis(cfg.getRedisHost(), cfg.getRedisPort(), cfg.getRedisReconnectionTimeout());
-        
+
         // Connects to redis server
-        Jedis redisPublisher = new Jedis(cfg.getRedisHost(), cfg.getRedisPort(), cfg.getRedisReconnectionTimeout());
         try {
             while(!connectToRedisPublisher(logger, cfg, redisPublisher)){
                 logger.log(Level.SEVERE, "MeltedStatus - ERROR: Could not connect to the Redis server. Will retry shortly...");
@@ -68,88 +66,95 @@ public class StatusProcessor {
     
     /**
      * Detects events and calls the right response.
-     * 
-     * @param lastCmd
-     * @param currentCmd
-     * @return 
+     * @param currentFrame
+     * @param previousFrame
+     * @param line
      */
-    public String eventHandler(String[] currentCmd, String[] lastCmd, String line){
-        
+    public void eventHandler(UstaResponse currentFrame, UstaResponse previousFrame, String line){
         // Prints line to logger
         //logger.log(Level.INFO, "MeltedStatus - line: {0}", line); // COMENTO ESTO PARA NO SPAMMEAR LA CONSOLA
         
-        
-        
-        if(lastCmd != null){
-            if(lastCmd.length == 17){
-                if(currentCmd.length == 17){
-
-                    // Publish line to redis
-                    redisPublisher.publish(mstaChannel, line);
-        
-                    // check and prints current mode  
-                    //checkMode(currentCmd);     
-                    
-                    // checks mode change
-                    checkChangeMode(currentCmd, lastCmd);    
-
-                    // checks for index change
-                    checkChangeIndex(currentCmd, lastCmd);
-
-
-
-                }else{
-                    wrongLenghtException(currentCmd);
-                    return "Wrong Lenght Exception";
-                }            
-            }else{
-                wrongLenghtException(lastCmd);
-                return "Wrong Lenght Exception";
-            }            
-        }else{
-            return "Last Cmd is Null";
+        if (previousFrame == null) {
+            // TODO no se si está bien salir si no tiene previous frame
+            return;
         }
-        return "";
+
+        // Publish line to redis
+        redisPublisher.publish(mstaChannel, line);
+
+        // check and prints current mode
+        //checkMode(currentFrame);
+
+        // checks mode change
+        checkChangeMode(currentFrame, previousFrame);
+
+        // checks for index change
+        checkChangeIndex(currentFrame, previousFrame);
     }    
     
-    private void checkChangeMode(String[] currentCmd, String[] lastCmd){
+    private boolean checkChangeMode(UstaResponse currentFrame, UstaResponse previousFrame){
+        boolean status = true;
         
-        if(!lastCmd[1].equals(currentCmd[1])){
-            redisPublisher.publish(mstaChannel, "CHANGE MODE FROM "+lastCmd[1]+" TO "+currentCmd[1]);
-            logger.log(Level.INFO, "MeltedStatus - line: {0}", "CHANGE MODE FROM "+lastCmd[1]+" TO "+currentCmd[1]);
+        try {
+            String previousMode = previousFrame.getUnitStatus();
+            String currentMode = currentFrame.getUnitStatus();
+
+            if(!previousMode.equals(currentMode)){
+                redisPublisher.publish(mstaChannel, "CHANGE MODE FROM "+previousMode+" TO "+currentMode);
+                logger.log(Level.INFO, "MeltedStatus - line: {0}", "CHANGE MODE FROM "+previousMode+" TO "+currentMode);
+            }
+
+            if (previousMode.equals("playing")) {
+                // From Playing to Pause - posible final de Playlist - Sets EndTime and sends log
+                if (currentMode.equals("paused")) {
+                    redisPublisher.publish(mstaChannel, "PLAYBACK PAUSED");
+                    logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK PAUSED");
+                    this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
+                    status = sendClipToLog(previousFrame);
+                }
+                // from Playing to Stop - Sets EndTime and sends log
+                else if (currentMode.equals("stopped")) {
+                    redisPublisher.publish(mstaChannel, "PLAYBACK STOPPED");
+                    logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STOPPED");
+                    this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
+                    status = sendClipToLog(previousFrame);
+                }
+            }
+            // Play - Sets StartTime
+            else if (currentMode.equals("playing")) {
+                redisPublisher.publish(mstaChannel, "PLAYBACK STARTED");
+                logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STARTED");
+                this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
+            }
+
+
+        } catch (MeltedCommandException ex) {
+            // TODO: HANDLE
+            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
         }
-        
-        // From Playing to Pause - posible final de Playlist - Sets EndTime and sends log
-        if(lastCmd[1].equals("playing") && currentCmd[1].equals("paused")){
-            redisPublisher.publish(mstaChannel, "PLAYBACK PAUSED");
-            logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK PAUSED"); 
-            this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
-            sendClipToLog(lastCmd);            
-        }
-        // from Playing to Stop - Sets EndTime and sends log
-        if(lastCmd[1].equals("playing") && currentCmd[1].equals("stopped")){
-            redisPublisher.publish(mstaChannel, "PLAYBACK STOPPED");
-            logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STOPPED");
-            this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
-            sendClipToLog(lastCmd);            
-        }
-        // Play - Sets StartTime 
-        if(!(lastCmd[1].equals("playing")) && currentCmd[1].equals("playing")){
-            redisPublisher.publish(mstaChannel, "PLAYBACK STARTED");
-            logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STARTED"); 
-            this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
-        }
+
+        return status;
     }
     
-    private void checkChangeIndex(String[] currentCmd, String[] lastCmd){
-        if(!lastCmd[16].equals(currentCmd[16])){ // Index changed
-            redisPublisher.publish(mstaChannel, "INDEX CHANGED FROM "+lastCmd[16]+" TO "+currentCmd[16]);
-            logger.log(Level.INFO, "MeltedStatus - line: {0}", "INDEX CHANGED FROM "+lastCmd[16]+" TO "+currentCmd[16]);
-            // sets end time and sends log
-            this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
-            sendClipToLog(lastCmd);            
-            // sets next clip start time  
-            this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());            
+    private void checkChangeIndex(UstaResponse currentFrame, UstaResponse previousFrame){
+        try {
+            int previousIndex = previousFrame.getPlayingClipIndex();
+            int currentIndex = currentFrame.getPlayingClipIndex();
+
+            if(previousIndex != currentIndex){ // Index changed
+                redisPublisher.publish(mstaChannel, "INDEX CHANGED FROM "+previousIndex+" TO "+currentIndex);
+                logger.log(Level.INFO, "MeltedStatus - line: {0}", "INDEX CHANGED FROM "+previousIndex+" TO "+currentIndex);
+
+                // sets end time and sends log
+                this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
+                sendClipToLog(previousFrame);
+
+                // sets next clip start time
+                this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
+            }
+        } catch (MeltedCommandException ex) {
+            // TODO: HANDLE
+            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, "No hay index", ex);
         }
     }
     
@@ -207,50 +212,60 @@ public class StatusProcessor {
         logger.log(Level.INFO, "WARNING: WrongLenghtException - USTA LINE: " + cmd);
     }
     
-    private void sendClipToLog(String[] cmd){            
-        // Creates json and sends it to playout log
-        ClipLog clip = new ClipLog();
-        clip.setName(cmd[2]);
-        clip.setStart(this.startTime);
-        clip.setEnd(this.endTime);
-        
-
-        //POSTing in Resty
-        Gson gson = new Gson();        
-        Resty resty = new Resty(Resty.Option.timeout(4000));
-        
-        
-        //primero busco el idRawMedia que corresponde segun el nombre del clip
-        String idRawMedia = "";
-        File f = new File(clip.getName());
-        String encodedName = URLEncoder.encode(f.getName().replace("\"", ""));
-        clip.setName(f.getName());
-        JSONResource resource = new JSONResource();
-        try { 
-            JSONArray jsonResource = resty.json("http://localhost:8001/api/medias/name/"+encodedName).array();
-            JSONObject jsonMedia = jsonResource.getJSONObject(0);
-            //resource = resty.json("http://localhost:8001/api/medias/name/"+encodedName);
-            //System.out.println("JSON RECEIVED:"+ resource.object().toString() ); 
-            idRawMedia = (String) jsonMedia.get("id");            
-        } catch (IOException ex) {
-            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
-            ex.printStackTrace();
-        } catch (Exception ex) {
-            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
-            ex.printStackTrace();
-        }
-        
-        clip.setIdRawMedia(idRawMedia);
-        System.out.println("clip = " + clip.toString());
-        String jsonClip = gson.toJson(clip);
-        Map<String, String> clipMap = gson.fromJson(jsonClip, Map.class);
-        JSONObject jsonObject = new JSONObject(clipMap);
+    private boolean sendClipToLog(UstaResponse frame){
         try {
-            resty.json("http://localhost:8080/api/playoutLog", Resty.content(jsonObject));
-        } catch (IOException ex) {
+            // Creates json and sends it to playout log
+            ClipLog clip = new ClipLog(frame.getPlayingClipPath(), this.startTime, this.endTime);
+            
+            //POSTing in Resty
+            Gson gson = new Gson();
+            Resty resty = new Resty(Resty.Option.timeout(4000));
+
+            //primero busco el idRawMedia que corresponde segun el nombre del clip
+            String idRawMedia = "";
+            String clipPath = clip.getName().replace("\"", ""); // Remove unnecesary quotes
+            String encodedName = URLEncoder.encode(clipPath);
+
+            // If the default media is playing then I don't log anything
+            if(clipPath.equals(cfg.getDefaultMediaPath())){
+                return false;
+            }
+
+            clip.setName(clip.getName());
+            try {
+                JSONArray jsonResource = resty.json("http://localhost:8001/api/medias/name/"+encodedName).array();
+                JSONObject jsonMedia = jsonResource.getJSONObject(0);
+                idRawMedia = (String) jsonMedia.get("id");
+            } catch (IOException ex) {
+                // TODO: HANDLE
+                Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
+                ex.printStackTrace();
+                return false;
+            } catch (Exception ex) {
+                // TODO: HANDLE
+                Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
+                ex.printStackTrace();
+                return false;
+            }
+
+            clip.setIdRawMedia(idRawMedia);
+            System.out.println("clip = " + clip.toString());
+            String jsonClip = gson.toJson(clip);
+            Map<String, String> clipMap = gson.fromJson(jsonClip, Map.class);
+            JSONObject jsonObject = new JSONObject(clipMap);
+            try {
+                resty.json("http://localhost:8080/api/playoutLog", Resty.content(jsonObject));
+            } catch (IOException ex) {
+                // TODO: HANDLE
+                Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
+                ex.printStackTrace();
+                return false;
+            }
+        } catch (MeltedCommandException ex) {
+            // TODO: HANDLE
             Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
-            ex.printStackTrace();
         }
+        return true;
     }
     
     /**

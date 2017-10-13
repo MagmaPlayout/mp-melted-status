@@ -1,9 +1,7 @@
 package meltedstatus;
 
-import com.google.gson.Gson;
 import java.util.HashMap;
 import java.util.Map;
-import us.monoid.json.JSONObject;
 
 
 /**
@@ -30,9 +28,7 @@ import us.monoid.json.JSONObject;
     [SEEKABLE] - seekable flag: indicates if the current clip is seekable (relates to head)
     [PL_GEN] - playlist generation number
     [INDEX] - current clip index (relates to head)
-    * 
-    * 
-    * 
+
 USTA Examples: 
 0 playing \"/home/debian/Descargas/videos/output/hdm_rock_solid.avi\" 195 1000 25.00 0 195 196 \"/home/debian/Descargas/videos/output/hdm_rock_solid.avi\" 195 0 195 196 1 2 0
 0 playing \"/home/debian/Descargas/videos/output/hdm_rock_solid.avi\" 0 1000 25.00 0 195 196 \"/home/debian/Descargas/videos/output/hdm_rock_solid.avi\" 0 0 195 196 1 2 1

@@ -1,8 +1,5 @@
 package meltedstatus;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * A Clip class used as a data structure containing relevant data.
  *
@@ -14,8 +11,6 @@ public class ClipLog {
     private String end;
     private String idRawMedia;
 
-   
-
     @Override
     public String toString() {
         return "Clip{" + "name=" + name + ", start=" + start + ", end=" + end + ", idRawMedia=" + idRawMedia + '}';
@@ -26,6 +21,12 @@ public class ClipLog {
      */
     public ClipLog() {
 
+    }
+    
+    public ClipLog(String name, String start, String end) {
+        this.name = name;
+        this.start = start;
+        this.end = end;
     }
 
     public String getName() {
