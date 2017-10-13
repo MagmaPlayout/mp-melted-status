@@ -154,7 +154,7 @@ public class StatusProcessor {
             }
         } catch (MeltedCommandException ex) {
             // TODO: HANDLE
-            Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, "No hay index", ex);
+            Logger.getLogger(StatusProcessor.class.getName()).log(Level.INFO, "No media index. Line discarded...", ex);
         }
     }
     

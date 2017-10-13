@@ -89,6 +89,7 @@
             <zipgroupfileset dir="../mp-core/libs" includes="gson-2.7.jar"/>
             <zipgroupfileset dir="../mp-core/libs" includes="resty-0.3.2.jar"/>
             <zipgroupfileset dir="../mp-core/libs" includes="jedis-2.9.0.jar"/>
+            <zipgroupfileset dir="../mpc-meltedBackend/dist" includes="*.jar"/>
 
             <manifest>
                 <attribute name="Main-Class" value="${main.class}"/>
