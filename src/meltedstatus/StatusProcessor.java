@@ -1,25 +1,19 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package meltedstatus;
 
 import com.google.gson.Gson;
-import java.io.IOException;
-import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import libconfig.ConfigurationManager;
 import meltedBackend.common.MeltedCommandException;
 import meltedBackend.responseParser.responses.UstaResponse;
+import meltedstatus.adminApi.AdminApi;
+import meltedstatus.adminApi.MPAdminApi;
+import meltedstatus.playoutApi.MPPlayoutApi;
+import meltedstatus.playoutApi.PlayoutApi;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisConnectionException;
-import us.monoid.json.JSONArray;
-import us.monoid.json.JSONObject;
 import us.monoid.web.Resty;
 
 /**
@@ -33,7 +27,8 @@ public class StatusProcessor {
     private String startTime;
     private String endTime;
     private final ConfigurationManager cfg;
-    
+    private final MPPlayoutApi playoutApi;
+    private final MPAdminApi adminApi;
     
     /**
      * CONSTRUCTOR INIT
@@ -42,6 +37,11 @@ public class StatusProcessor {
         this.logger = Logger.getLogger(MeltedStatus.class.getName());
         this.cfg = ConfigurationManager.getInstance();
         this.redisPublisher = new Jedis(cfg.getRedisHost(), cfg.getRedisPort(), cfg.getRedisReconnectionTimeout());
+        
+        Resty resty = new Resty(Resty.Option.timeout(4000));
+        Gson gson = new Gson();
+        this.playoutApi = new PlayoutApi(resty, gson, cfg);
+        this.adminApi = new AdminApi(resty, gson, cfg);
 
         // Connects to redis server
         try {
@@ -110,14 +110,14 @@ public class StatusProcessor {
                     redisPublisher.publish(mstaChannel, "PLAYBACK PAUSED");
                     logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK PAUSED");
                     this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
-                    status = sendClipToLog(previousFrame);
+                    status = sendClipToLogDB(previousFrame);
                 }
                 // from Playing to Stop - Sets EndTime and sends log
                 else if (currentMode.equals("stopped")) {
                     redisPublisher.publish(mstaChannel, "PLAYBACK STOPPED");
                     logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STOPPED");
                     this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
-                    status = sendClipToLog(previousFrame);
+                    status = sendClipToLogDB(previousFrame);
                 }
             }
             // Play - Sets StartTime
@@ -147,7 +147,7 @@ public class StatusProcessor {
 
                 // sets end time and sends log
                 this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
-                sendClipToLog(previousFrame);
+                sendClipToLogDB(previousFrame);
 
                 // sets next clip start time
                 this.startTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
@@ -206,65 +206,50 @@ public class StatusProcessor {
         logger.log(Level.INFO, "MeltedStatus - line: {0}", "MODE: ERROR READING MODE");
         return "ERROR READING MODE";
     }
-    
-    private void wrongLenghtException(String[] cmd){
-        redisPublisher.publish(mstaChannel, "WARNING: WrongLenghtException - USTA LINE: " + cmd);
-        logger.log(Level.INFO, "WARNING: WrongLenghtException - USTA LINE: " + cmd);
-    }
-    
-    private boolean sendClipToLog(UstaResponse frame){
-        try {
-            // Creates json and sends it to playout log
-            ClipLog clip = new ClipLog(frame.getPlayingClipPath(), this.startTime, this.endTime);
-            
-            //POSTing in Resty
-            Gson gson = new Gson();
-            Resty resty = new Resty(Resty.Option.timeout(4000));
 
-            //primero busco el idRawMedia que corresponde segun el nombre del clip
-            String idRawMedia = "";
+    /**
+     * Creates a ClipLog and sends it to the playoutLog DB table using the DB API.
+     * 
+     * @param frame
+     * @return
+     */
+    private boolean sendClipToLogDB(UstaResponse frame){
+        try {
+            if(this.startTime.length() <= 1) return false;
+
+            ClipLog clip = new ClipLog(frame.getPlayingClipPath(), this.startTime, this.endTime);
             String clipPath = clip.getName().replace("\"", ""); // Remove unnecesary quotes
-            String encodedName = URLEncoder.encode(clipPath);
 
             // If the default media is playing then I don't log anything
-            if(clipPath.equals(cfg.getDefaultMediaPath())){
+            // TODO: agregarcódigo de piece para el default media e.g. -1
+            if(clipPath.equals(cfg.getDefaultMediaPath()) || clipPath.isEmpty()){
                 return false;
             }
 
-            clip.setName(clip.getName());
-            try {
-                JSONArray jsonResource = resty.json("http://localhost:8001/api/medias/name/"+encodedName).array();
-                JSONObject jsonMedia = jsonResource.getJSONObject(0);
-                idRawMedia = (String) jsonMedia.get("id");
-            } catch (IOException ex) {
-                // TODO: HANDLE
-                Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
-                ex.printStackTrace();
-                return false;
-            } catch (Exception ex) {
-                // TODO: HANDLE
-                Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
-                ex.printStackTrace();
+            int pieceId = Integer.parseInt(clipPath);
+
+            // Get's the idRawMedia that matches the clipPath
+            String idRawMedia = playoutApi.getIdRawMedia(pieceId);
+            if(idRawMedia.isEmpty()){
+                logger.log(Level.SEVERE, "StatusProcessor - Couldn''t get the idRawMedia for {0}", clipPath);
                 return false;
             }
-
             clip.setIdRawMedia(idRawMedia);
-            System.out.println("clip = " + clip.toString());
-            String jsonClip = gson.toJson(clip);
-            Map<String, String> clipMap = gson.fromJson(jsonClip, Map.class);
-            JSONObject jsonObject = new JSONObject(clipMap);
-            try {
-                resty.json("http://localhost:8080/api/playoutLog", Resty.content(jsonObject));
-            } catch (IOException ex) {
-                // TODO: HANDLE
-                Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
-                ex.printStackTrace();
-                return false;
-            }
+            logger.log(Level.INFO, "StatusProcessor - idRawMedia = {0}", idRawMedia);
+
+            // Get piece data from mp-playout-api
+            clip = playoutApi.loadPieceData(clip);            
+
+            // Call api to insert this log
+            System.out.println(clip.toString());
+            adminApi.insertLog(clip);
+        } catch(NumberFormatException e){
+            return false;
         } catch (MeltedCommandException ex) {
-            // TODO: HANDLE
+            //TODO HANDLE
             Logger.getLogger(StatusProcessor.class.getName()).log(Level.SEVERE, null, ex);
         }
+
         return true;
     }
     
