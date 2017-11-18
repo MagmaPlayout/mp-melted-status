@@ -8,6 +8,7 @@ import java.util.logging.Logger;
 import libconfig.ConfigurationManager;
 import meltedBackend.common.MeltedCommandException;
 import meltedBackend.responseParser.responses.UstaResponse;
+import meltedBackend.statuscmd.StatusCmdProcessor;
 import meltedstatus.adminApi.AdminApi;
 import meltedstatus.adminApi.MPAdminApi;
 import meltedstatus.playoutApi.MPPlayoutApi;
@@ -20,7 +21,7 @@ import us.monoid.web.Resty;
  *
  * @author debian
  */
-public class StatusProcessor {
+public class StatusProcessor implements StatusCmdProcessor {
     private Jedis redisPublisher;
     private final String mstaChannel;
     private final Logger logger;
@@ -58,9 +59,10 @@ public class StatusProcessor {
         this.endTime = "-";
     }
     
+    @Override      
     public void meltedDisonnected(){
-        redisPublisher.publish(mstaChannel, "MELTED DISONNECTED");
-        logger.log(Level.SEVERE, "MeltedStatus - line: {0}", "MELTED DISCONNECTED");
+        redisPublisher.publish(mstaChannel, "MELTED-DISONNECTED"); // TODO: poner los comandos por redis en algún lugar comun así el core los saca de ahí también
+        logger.log(Level.SEVERE, "MeltedStatus - line: {0}", "MELTED-DISCONNECTED");
     }
     
     
@@ -70,10 +72,8 @@ public class StatusProcessor {
      * @param previousFrame
      * @param line
      */
+    @Override    
     public void eventHandler(UstaResponse currentFrame, UstaResponse previousFrame, String line){
-        // Prints line to logger
-        //logger.log(Level.INFO, "MeltedStatus - line: {0}", line); // COMENTO ESTO PARA NO SPAMMEAR LA CONSOLA
-        
         if (previousFrame == null) {
             // TODO no se si está bien salir si no tiene previous frame
             return;
@@ -111,6 +111,7 @@ public class StatusProcessor {
                     logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK PAUSED");
                     this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
                     status = sendClipToLogDB(previousFrame);
+                    // TODO: mandar un play acá
                 }
                 // from Playing to Stop - Sets EndTime and sends log
                 else if (currentMode.equals("stopped")) {
@@ -118,6 +119,7 @@ public class StatusProcessor {
                     logger.log(Level.INFO, "MeltedStatus - line: {0}", "PLAYBACK STOPPED");
                     this.endTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
                     status = sendClipToLogDB(previousFrame);
+                    // TODO: mandar un play acá
                 }
             }
             // Play - Sets StartTime

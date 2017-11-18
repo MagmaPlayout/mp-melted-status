@@ -1,15 +1,14 @@
 package meltedstatus;
 
 import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import libconfig.ConfigurationManager;
-import meltedBackend.responseParser.parsers.SingleLineStatusParser;
-import meltedBackend.responseParser.responses.UstaResponse;
+import meltedBackend.common.MeltedCommandException;
+import meltedBackend.statuscmd.StatusCmdProcessor;
+import meltedBackend.telnetClient.MeltedTelnetClient;
 
 /**
  * Connects to a running melted instance and queries the STATUS.
@@ -36,54 +35,48 @@ public class MeltedStatus {
         ConfigurationManager cfg = ConfigurationManager.getInstance();
         cfg.init(logger);
         
-        StatusProcessor sp = new StatusProcessor();
-
-        try {
-            socket = new Socket(cfg.getMeltedHost(), cfg.getMeltedPort());
-//            socket.setSoTimeout(5000); // TODO: commented for debugging purposes
-            writer = new PrintWriter(socket.getOutputStream(), true);
-            reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        listenStatusForever(logger, cfg);
+    }
+    
+    /**
+     * Creates a connection to Melted, sends a STATUS cmd and start's listening to it.
+     * If something fails it'll reconnect to Melted, send STATUS cmd and start to listen again, forever.
+     * 
+     * @param logger
+     * @param cfg 
+     */
+    private void listenStatusForever(Logger logger, ConfigurationManager cfg){
+        MeltedTelnetClient melted = new MeltedTelnetClient();
+        if(!connectToMelted(logger, cfg, melted)){ //handles retries by its own
+            logger.log(Level.SEVERE, "MeltedStatus - ERROR: Could not connect to the Melted server. Retries exhausted. \n");
+        }
         
-            writer.println("STATUS"); // Send telnet command
-            running=true;
-
-            SingleLineStatusParser parser = new SingleLineStatusParser(new UstaResponse());
-            UstaResponse previousFrame = null;
-            while(running){               
-                String line = reader.readLine(); // Blocking method
-                if(line != null){
-                    UstaResponse currentFrame = (UstaResponse) parser.parse(line);
-                    sp.eventHandler(currentFrame, previousFrame, line);
-                    previousFrame = currentFrame.createCopy(UstaResponse.class);
-                }
-            }
-        } catch (IOException ex) {
-            ex.printStackTrace();
-            System.out.println("MELTED DISCONECTED!");
-            sp.meltedDisonnected();
-            disconnect();
-        } catch (InstantiationException ex) {
-            Logger.getLogger(MeltedStatus.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (IllegalAccessException ex) {
-            Logger.getLogger(MeltedStatus.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }
-    
-    public void meltedReconnect(){
-        //TODO: reconn routine
-    }
-    
-    public void disconnect(){
+        StatusCmdProcessor sp = new StatusProcessor();
         try {
-            running = false;
-            writer.close();
-            reader.close();
-            socket.close();
-        } catch (IOException ex) {
-            //TODO
-             System.out.println("EXCEPTION WTF: " +ex.toString());
-            ex.printStackTrace();
+            
+            melted.listenStatus(sp); // Blocking method
+            
+        } catch (MeltedCommandException ex) {
+            logger.log(Level.SEVERE, "MeltedStatus - ERROR: An error occurred while listening to STATUS CMD. \n");
         }
-    }   
+        
+        sp.meltedDisonnected();
+        melted.disconnect();
+        listenStatusForever(logger, cfg); // If a MeltedCommandException is detected, it'll start the process all over again
+    }
+    
+    public boolean connectToMelted(Logger logger, ConfigurationManager cfg, MeltedTelnetClient melted){
+        boolean connected = melted.connect(cfg.getMeltedHost(), cfg.getMeltedPort(), logger);
+        while(!connected){
+            // Handling reconnections
+            connected = melted.reconnect(cfg.getMeltedReconnectionTries(), cfg.getMeltedReconnectionTimeout());
+        }
+        if(!connected){
+            logger.log(Level.SEVERE, "MeltedStatus - ERROR: Could not connect to the Melted server. Is it running?");
+            return false;
+        }
+        
+        return true;
+    }
    
 }
